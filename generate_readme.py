@@ -1,4 +1,15 @@
-# Fake News Detection System
+"""
+Generate a README file for the Fake News Detection project
+"""
+
+# Fake News Detection Project - README Generator
+
+import os
+
+def generate_readme():
+    """Generate a comprehensive README.md file for the project"""
+    
+    readme_content = """# Fake News Detection System
 
 ## Overview
 This project implements a machine learning-based fake news detection system using Support Vector Machines (SVM) and ensemble methods. The system analyzes text content to determine whether a news article is likely to be fake or real.
@@ -66,3 +77,13 @@ The model was trained on:
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
+"""
+    
+    # Write the README file
+    with open("README.md", "w") as f:
+        f.write(readme_content)
+    
+    print("README.md generated successfully!")
+
+if __name__ == "__main__":
+    generate_readme()
