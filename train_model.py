@@ -19,30 +19,33 @@ import warnings
 warnings.filterwarnings('ignore')
 
 def load_and_preprocess_data():
-    """Load datasets with better sampling to reduce bias"""
-    # Load datasets
-    url_fake = "D:\\Kartik\\Learning\\ML\\Data\\Fake.csv"
-    url_true = "D:\\Kartik\\Learning\\ML\\Data\\True.csv"
-    df_fake = pd.read_csv(url_fake)
-    df_true = pd.read_csv(url_true)
+    """Load the WELFake dataset"""
+    # Load the new WELFake dataset
+    dataset_path = "D:\\Kartik\\Learning\\ML\\Data\\WELFake_Dataset.csv"
+    df = pd.read_csv(dataset_path)
     
-    print(f"📊 Original data: Fake={len(df_fake)}, Real={len(df_true)}")
+    print(f"📊 Original WELFake dataset: {len(df)} articles")
     
-    # Balance the dataset by taking equal samples
-    min_samples = min(len(df_fake), len(df_true))
-    sample_size = min(min_samples, 15000)  # Cap at 15k each to prevent overfitting
+    # Check the label distribution
+    label_counts = df['label'].value_counts()
+    print(f"📈 Label distribution: Real (1)={label_counts.get(1, 0)}, Fake (0)={label_counts.get(0, 0)}")
     
-    df_fake_sampled = df_fake.sample(n=sample_size, random_state=42)
-    df_true_sampled = df_true.sample(n=sample_size, random_state=42)
+    # Drop the unnamed index column if it exists
+    if 'Unnamed: 0' in df.columns:
+        df = df.drop('Unnamed: 0', axis=1)
     
-    print(f"🎯 Balanced data: Fake={len(df_fake_sampled)}, Real={len(df_true_sampled)}")
+    # Rename label column to class for consistency
+    df = df.rename(columns={'label': 'class'})
     
-    # Add class labels
-    df_fake_sampled["class"] = 0  # Fake news
-    df_true_sampled["class"] = 1  # Real news
+    # Sample data to make training faster while keeping balance
+    # Use stratified sampling to maintain the class distribution
+    sample_size = min(50000, len(df))  # Cap at 50k for reasonable training time
     
-    # Combine datasets
-    df = pd.concat([df_fake_sampled, df_true_sampled], axis=0)
+    if sample_size < len(df):
+        df = df.groupby('class', group_keys=False).apply(
+            lambda x: x.sample(n=min(len(x), sample_size//2), random_state=42)
+        ).reset_index(drop=True)
+        print(f"🎯 Sampled data: {len(df)} articles")
     
     # Shuffle the data
     df = df.sample(frac=1, random_state=42).reset_index(drop=True)
@@ -89,20 +92,28 @@ def clean_text_conservative(text):
     return text
 
 def preprocess_dataframe(df):
-    """Process dataframe with better handling"""
+    """Process dataframe with better handling for WELFake dataset"""
+    # Handle missing values in title and text
+    df["title"] = df["title"].fillna("").astype(str)
+    df["text"] = df["text"].fillna("").astype(str)
+    
     # Combine title and text
-    df["total_text"] = df["title"].fillna("").astype(str) + " " + df["text"].fillna("").astype(str)
+    df["total_text"] = df["title"] + " " + df["text"]
     
     # Clean text
     df["total_text"] = df["total_text"].apply(clean_text_conservative)
     
-    # Remove very short or very long texts
-    df = df[(df["total_text"].str.len() > 30) & (df["total_text"].str.len() < 5000)]
+    # Remove very short texts (but be more lenient for this dataset)
+    df = df[df["total_text"].str.len() > 20]
+    
+    # Remove very long texts that might be corrupted
+    df = df[df["total_text"].str.len() < 10000]
     
     # Remove exact duplicates
     df = df.drop_duplicates(subset=['total_text'])
     
     print(f"📝 After preprocessing: {len(df)} articles")
+    print(f"🔍 Class distribution after preprocessing: {df['class'].value_counts().to_dict()}")
     
     return df[["total_text", "class"]]
 

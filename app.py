@@ -135,27 +135,27 @@ def create_interface():
             label="What news do you want me to check?"
         ),
         outputs=gr.Textbox(label="My Analysis"),
-        title="🕵️ Improved Fake News Detective (Now More Accurate!)",
+        title="🕵️ Fake News Detective - WELFake Dataset Edition",
         description="""
-        Hey there! I'm your improved fake news detector! I've been retrained with better techniques to work much better on real-world news articles.
+        Hey there! I'm your fake news detector trained on the WELFake dataset! 
         
-        **What's new in this version:**
-        - Better text preprocessing that removes dataset-specific patterns
-        - Improved feature extraction with regularization
-        - More robust training with cross-validation
-        - Should work MUCH better on real news articles!
+        **About this model:**
+        - Trained on 72,000+ news articles from the WELFake dataset
+        - Uses advanced SVM with TF-IDF vectorization
+        - Balanced training on both real and fake news
+        - Conservative text preprocessing to preserve meaning
         
         **How to use me:**
         1. Paste any news headline or article (at least a few sentences)
         2. Hit Submit and I'll analyze it for you
         3. I'll give you my verdict with a confidence score
         
-        **New features:**
-        - More nuanced confidence reporting
-        - Better handling of edge cases
-        - Improved accuracy on real-world data
+        **Features:**
+        - Confidence scoring for predictions
+        - Handles various types of news content
+        - Conservative preprocessing to avoid bias
         
-        **Remember:** I'm much better now, but still not perfect! Always verify important news from multiple trusted sources. 🛡️
+        **Remember:** Always verify important news from multiple trusted sources! 🛡️
         """,
         examples=[
             ["Scientists at MIT have developed a new breakthrough in quantum computing that could revolutionize data processing within the next decade."],
