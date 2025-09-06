@@ -3,6 +3,18 @@
 ## Overview
 This project implements a machine learning-based fake news detection system using Support Vector Machines (SVM) and ensemble methods. The system analyzes text content to determine whether a news article is likely to be fake or real.
 
+## One-Click Training and Usage
+For the simplest experience, use the one-click launcher:
+
+```bash
+python one_click_launcher.py
+```
+
+This will:
+1. Clean up any previous trained models
+2. Train a new model using the streamlined approach
+3. Launch the web interface for immediate testing
+
 ## Features
 - Text preprocessing with NLTK
 - TF-IDF vectorization for feature extraction
@@ -12,6 +24,9 @@ This project implements a machine learning-based fake news detection system usin
 - Comprehensive evaluation metrics
 
 ## Project Structure
+- `one_click_launcher.py`: **NEW** - Train and launch with one command
+- `cleanup.py`: **NEW** - Remove all generated files before training
+- `train_streamlined.py`: **NEW** - Fast and efficient training script
 - `train_model.py`: Original training script
 - `improved_train_model.py`: Enhanced training with multiple models
 - `train_ensemble_model.py`: Ensemble model training

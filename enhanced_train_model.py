@@ -1,18 +1,59 @@
 """
-Improved Fake News Detection Training Script
-Focuses on accuracy with minimal dependencies
+Enhanced Fake News Detection Training Script
+Focuses on accuracy and robustness with a single comprehensive script
 """
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold, GridSearchCV
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
+from sklearn.utils.class_weight import compute_class_weight
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import seaborn as sns
 import re
 import os
 import time
 import joblib
-from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 import warnings
+
+# Try to import nltk resources, with graceful fallback
+try:
+    import nltk
+    from nltk.corpus import stopwords
+    from nltk.stem import WordNetLemmatizer
+    
+    # Check if stopwords are available, download if needed
+    try:
+        stopwords.words('english')
+    except LookupError:
+        print("Downloading NLTK stopwords...")
+        nltk.download('stopwords', quiet=True)
+    
+    # Check if wordnet is available, download if needed
+    try:
+        WordNetLemmatizer()
+        try:
+            # Try to actually use it to make sure it's fully loaded
+            lemmatizer = WordNetLemmatizer()
+            lemmatizer.lemmatize("test")
+        except LookupError:
+            print("Downloading NLTK WordNet...")
+            nltk.download('wordnet', quiet=True)
+            nltk.download('omw-1.4', quiet=True)
+    except Exception as e:
+        print(f"Warning: WordNet not available: {str(e)}")
+        print("Will use simpler text processing")
+        NLTK_AVAILABLE = False
+        
+    NLTK_AVAILABLE = True
+except ImportError:
+    print("NLTK not available. Will use basic text processing.")
+    NLTK_AVAILABLE = False
+
 warnings.filterwarnings('ignore')
 
 def find_data_files():
@@ -52,8 +93,8 @@ def find_data_files():
     else:
         raise FileNotFoundError("Could not find Fake.csv and True.csv files in any expected location")
 
-def load_and_balance_data(max_samples=None):
-    """Load datasets with balanced sampling"""
+def load_and_preprocess_data(max_samples=None):
+    """Load datasets with better sampling to reduce bias"""
     # Find and load datasets
     url_fake, url_true = find_data_files()
     df_fake = pd.read_csv(url_fake)
@@ -85,8 +126,8 @@ def load_and_balance_data(max_samples=None):
     
     return df
 
-def clean_text(text):
-    """Text cleaning function with good performance"""
+def clean_text_advanced(text):
+    """Advanced text cleaning to preserve important meaning while removing noise"""
     if pd.isna(text):
         return ""
     
@@ -99,19 +140,65 @@ def clean_text(text):
     # Replace email with placeholder
     text = re.sub(r'\S+@\S+', ' [EMAIL] ', text)
     
-    # Replace numbers with placeholder
-    text = re.sub(r'\b\d{4,}\b', ' [NUMBER] ', text)
+    # Replace numbers with placeholder but keep important context
+    text = re.sub(r'\b\d{4,}\b', ' [NUMBER] ', text)  # Replace long numbers
     
-    # Remove non-alphanumeric characters except basic punctuation
-    text = re.sub(r'[^a-zA-Z0-9\s\.\!\?\,\;\:]', ' ', text)
+    # Keep important punctuation that may indicate sentiment or emphasis
+    text = re.sub(r'[^a-zA-Z0-9\s\.\!\?\,\;\:\"\'\(\)\-]', ' ', text)
+    
+    # Replace multiple punctuation with single instance (e.g., !!! → !)
+    text = re.sub(r'([\.\!\?\,\;\:\"\'\(\)\-])\1+', r'\1', text)
     
     # Remove extra whitespace
     text = ' '.join(text.split())
     
+    # Advanced processing if NLTK is available
+    if NLTK_AVAILABLE:
+        try:
+            # More sophisticated stopword removal
+            stop_words = set(stopwords.words("english"))
+            # Keep important words that might indicate bias, sentiment, or opinion
+            keep_words = {
+                'not', 'no', 'never', 'nothing', 'nobody', 'neither', 'nowhere', 'none',
+                'but', 'however', 'although', 'though', 'yet', 'still', 'nevertheless',
+                'very', 'really', 'quite', 'extremely', 'highly', 'completely',
+                'must', 'should', 'would', 'could', 'might', 'may',
+                'always', 'never', 'often', 'sometimes', 'usually',
+                'true', 'false', 'fact', 'actual', 'allegedly', 'reportedly'
+            }
+            stop_words = stop_words - keep_words
+            
+            # Tokenize and apply lemmatization for better feature extraction
+            lemmatizer = WordNetLemmatizer()
+            words = text.split()
+            processed_words = []
+            
+            for word in words:
+                if word not in stop_words and len(word) > 1:
+                    try:
+                        # Apply lemmatization to reduce words to their base form
+                        lemmatized = lemmatizer.lemmatize(word)
+                        processed_words.append(lemmatized)
+                    except:
+                        # If lemmatization fails, just use the original word
+                        processed_words.append(word)
+                    
+            text = ' '.join(processed_words)
+        except Exception as e:
+            # If any NLTK processing fails, fall back to simpler processing
+            print(f"Warning: NLTK processing failed: {str(e)}")
+            print("Using simpler text processing")
+            words = text.split()
+            text = ' '.join([word for word in words if len(word) > 1])
+    else:
+        # Simpler processing if NLTK is not available
+        words = text.split()
+        text = ' '.join([word for word in words if len(word) > 1])
+    
     return text
 
 def preprocess_dataframe(df):
-    """Process dataframe with balanced approach"""
+    """Process dataframe with better handling"""
     start_time = time.time()
     print("Preprocessing text data...")
     
@@ -132,9 +219,9 @@ def preprocess_dataframe(df):
         else:
             raise ValueError("Could not find text columns in the dataset")
     
-    # Clean text
+    # Clean text (use advanced cleaning)
     print("Applying text cleaning...")
-    df["total_text"] = df["total_text"].apply(clean_text)
+    df["total_text"] = df["total_text"].apply(clean_text_advanced)
     
     # Remove very short or empty texts
     df = df[df["total_text"].str.len() > 30]
@@ -154,21 +241,22 @@ def preprocess_dataframe(df):
     
     return df[["total_text", "class"]]
 
-def create_features(df, max_features=3000):
-    """Create features for classification"""
+def create_optimized_features(df, max_features=3000):
+    """Create features with optimized parameters for better accuracy"""
     start_time = time.time()
     print(f"Creating TF-IDF features with {max_features} features...")
     
+    # Advanced TF-IDF settings
     vectorizer = TfidfVectorizer(
-        max_features=max_features,
-        min_df=3,
-        max_df=0.9,
-        ngram_range=(1, 2),
+        max_features=max_features,  # More features for better accuracy
+        min_df=3,                  # Must appear in at least 3 documents
+        max_df=0.9,                # Can appear in up to 90% of documents
+        ngram_range=(1, 2),        # Unigrams and bigrams
         strip_accents='unicode',
         lowercase=True,
-        sublinear_tf=True,
+        sublinear_tf=True,         # Use sublinear TF scaling
         use_idf=True,
-        norm='l2'
+        norm='l2'                  # L2 normalization
     )
     
     X = vectorizer.fit_transform(df["total_text"])
@@ -180,10 +268,10 @@ def create_features(df, max_features=3000):
     
     return X, y, vectorizer
 
-def train_model(X, y):
-    """Train an SVM model with good accuracy"""
+def train_optimized_model(X, y):
+    """Train a highly optimized model for accuracy"""
     start_time = time.time()
-    print("Training SVM model...")
+    print("Training optimal model...")
     
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(
@@ -193,8 +281,8 @@ def train_model(X, y):
     print(f"Training data: {X_train.shape[0]} samples")
     print(f"Testing data: {X_test.shape[0]} samples")
     
-    # Train SVM with optimized parameters
-    model = SVC(
+    # Define models with optimized parameters
+    svm = SVC(
         kernel='linear',
         C=1.0,
         class_weight='balanced',
@@ -202,21 +290,52 @@ def train_model(X, y):
         probability=True
     )
     
-    model.fit(X_train, y_train)
+    rf = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=None,
+        min_samples_split=2,
+        min_samples_leaf=1,
+        class_weight='balanced',
+        random_state=42
+    )
     
-    # Predict and evaluate
-    y_pred = model.predict(X_test)
+    lr = LogisticRegression(
+        C=1.0,
+        solver='liblinear',
+        class_weight='balanced',
+        random_state=42,
+        max_iter=1000
+    )
+    
+    # Create a voting ensemble
+    print("Using ensemble voting for better accuracy...")
+    ensemble = VotingClassifier(
+        estimators=[
+            ('svm', svm),
+            ('rf', rf),
+            ('lr', lr)
+        ],
+        voting='soft'  # Use probability weights
+    )
+    
+    # Train the ensemble
+    ensemble.fit(X_train, y_train)
+    
+    # Predict on test set
+    y_pred = ensemble.predict(X_test)
+    
+    # Evaluate
     accuracy = accuracy_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred, average='macro')
     
     print(f"Training completed in {time.time() - start_time:.2f} seconds")
-    print(f"Model accuracy: {accuracy:.4f}")
-    print(f"Model F1-score: {f1:.4f}")
+    print(f"Ensemble model accuracy: {accuracy:.4f}")
+    print(f"Ensemble model F1-score: {f1:.4f}")
     
-    return model, X_test, y_test, y_pred
+    return ensemble, X_test, y_test, y_pred
 
-def evaluate_model(y_test, y_pred):
-    """Evaluate model performance"""
+def evaluate_model_detailed(y_test, y_pred, model_name="Model"):
+    """Detailed evaluation focusing on accuracy and balance"""
     print("\nDetailed Model Evaluation:")
     print("-" * 50)
     
@@ -268,7 +387,7 @@ def evaluate_model(y_test, y_pred):
     
     return accuracy, f1
 
-def test_examples(model, vectorizer):
+def test_real_examples(model, vectorizer):
     """Test the model on real-world examples"""
     print("\nTesting on real-world examples:")
     print("-" * 50)
@@ -300,7 +419,7 @@ def test_examples(model, vectorizer):
     
     for i, example in enumerate(examples, 1):
         # Preprocess text
-        processed_text = clean_text(example["text"])
+        processed_text = clean_text_advanced(example["text"])
         
         # Vectorize
         text_vector = vectorizer.transform([processed_text])
@@ -352,26 +471,26 @@ def main():
     total_start_time = time.time()
     
     print("=" * 60)
-    print("IMPROVED FAKE NEWS DETECTION - TRAINING")
+    print("ENHANCED FAKE NEWS DETECTION - TRAINING")
     print("=" * 60)
     
-    # Step 1: Load and balance data (use fewer samples for quicker training)
-    df = load_and_balance_data(max_samples=10000)
+    # Step 1: Load and preprocess data
+    df = load_and_preprocess_data()
     
     # Step 2: Preprocess text
     df = preprocess_dataframe(df)
     
     # Step 3: Create features
-    X, y, vectorizer = create_features(df)
+    X, y, vectorizer = create_optimized_features(df)
     
     # Step 4: Train model
-    model, X_test, y_test, y_pred = train_model(X, y)
+    model, X_test, y_test, y_pred = train_optimized_model(X, y)
     
     # Step 5: Evaluate model
-    accuracy, f1 = evaluate_model(y_test, y_pred)
+    accuracy, f1 = evaluate_model_detailed(y_test, y_pred, "Ensemble Model")
     
     # Step 6: Test on real examples
-    real_world_accuracy = test_examples(model, vectorizer)
+    real_world_accuracy = test_real_examples(model, vectorizer)
     
     # Step 7: Save model
     save_model(model, vectorizer)
