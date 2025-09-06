@@ -8,47 +8,58 @@ import numpy as np
 def load_models():
     """Load the saved model and vectorizer"""
     try:
-        model = joblib.load("svm_model.pkl")
-        vectorizer = joblib.load("tfidf_vectorizer.pkl")
+        # Try to load balanced model first
+        model = joblib.load("svm_model_balanced.pkl")
+        vectorizer = joblib.load("tfidf_vectorizer_balanced.pkl")
         return model, vectorizer
     except FileNotFoundError:
-        raise Exception("Model files not found. Please train the model first by running train_model.py")
+        try:
+            # Fallback to original model
+            model = joblib.load("svm_model.pkl")
+            vectorizer = joblib.load("tfidf_vectorizer.pkl")
+            return model, vectorizer
+        except FileNotFoundError:
+            raise Exception("Model files not found. Please train the model first by running train_balanced_model.py")
 
 def clean_text_conservative(text):
-    """Matches the exact preprocessing from train_model.py"""
+    """Less aggressive text cleaning to preserve fake news indicators"""
     if pd.isna(text):
         return ""
     
     text = str(text).lower()
     
     # Remove URLs but keep the context
-    text = re.sub(r'http\S+|www\S+|https\S+', ' [URL] ', text, flags=re.MULTILINE)
+    text = re.sub(r'http\S+|www\S+|https\S+', ' url ', text, flags=re.MULTILINE)
     
     # Replace email with placeholder
-    text = re.sub(r'\S+@\S+', ' [EMAIL] ', text)
+    text = re.sub(r'\S+@\S+', ' email ', text)
     
-    # Keep some numbers but remove excessive ones
-    text = re.sub(r'\b\d{4,}\b', ' [NUMBER] ', text)  # Replace long numbers
+    # Keep most numbers - they might be important
+    text = re.sub(r'\b\d{8,}\b', ' longnumber ', text)  # Only replace very long numbers
     
-    # Keep basic punctuation
-    text = re.sub(r'[^a-zA-Z0-9\s\.\!\?\,\;\:]', ' ', text)
+    # Keep more punctuation - exclamation marks are important for fake news detection!
+    text = re.sub(r'[^a-zA-Z0-9\s\.\!\?\,\;\:\-\'\"]', ' ', text)
     
     # Remove extra whitespace
     text = ' '.join(text.split())
     
-    # More conservative stopword removal
+    # Much more conservative stopword removal - keep bias indicators
     stop_words = set(stopwords.words("english"))
-    # Keep important words that might indicate bias or opinion
+    # Keep important words that indicate sensationalism or bias
     keep_words = {
         'not', 'no', 'never', 'nothing', 'nobody', 'neither', 'nowhere', 'none',
         'but', 'however', 'although', 'though', 'yet', 'still', 'nevertheless',
-        'very', 'really', 'quite', 'extremely', 'highly', 'completely',
-        'must', 'should', 'would', 'could', 'might', 'may',
-        'always', 'never', 'often', 'sometimes', 'usually'
+        'very', 'really', 'quite', 'extremely', 'highly', 'completely', 'totally',
+        'must', 'should', 'would', 'could', 'might', 'may', 'will', 'shall',
+        'always', 'never', 'often', 'sometimes', 'usually', 'definitely',
+        'shocking', 'amazing', 'incredible', 'unbelievable', 'breaking', 'exposed',
+        'secret', 'hidden', 'truth', 'revealed', 'discover', 'scientists', 'doctors',
+        'government', 'officials', 'experts', 'study', 'research'
     }
     stop_words = stop_words - keep_words
     
     words = text.split()
+    # Keep words that are at least 2 characters (more lenient)
     text = ' '.join([word for word in words if word not in stop_words and len(word) > 1])
     
     return text
