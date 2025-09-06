@@ -14,6 +14,7 @@ import re
 from nltk.corpus import stopwords
 import nltk
 import joblib
+from sklearn.svm import LinearSVC
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -135,10 +136,9 @@ def train_multiple_models(X, y):
     )
     
     models = {
-        'SVM_Linear': SVC(kernel='linear', C=1.0, class_weight='balanced', random_state=42, probability=True),
-        'SVM_RBF': SVC(kernel='rbf', C=1.0, class_weight='balanced', random_state=42, probability=True),
-        'LogisticRegression': LogisticRegression(C=1.0, class_weight='balanced', random_state=42, max_iter=1000),
-        'RandomForest': RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42)
+        'SVM_Linear': LinearSVC(C=1.0, class_weight='balanced',random_state=42, max_iter=5000),
+        'LogisticRegression': LogisticRegression(C=1.0, class_weight='balanced', random_state=42, max_iter=1000, n_jobs=-1),
+        'RandomForest': RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42, n_jobs=-1)
     }
     
     best_model = None
@@ -151,8 +151,8 @@ def train_multiple_models(X, y):
     for name, model in models.items():
         # Cross-validation
         cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        cv_f1 = cross_val_score(model, X_train, y_train, cv=cv, scoring='f1_macro')
-        cv_acc = cross_val_score(model, X_train, y_train, cv=cv, scoring='accuracy')
+        cv_f1 = cross_val_score(model, X_train, y_train, cv=cv, scoring='f1_macro', n_jobs=-1)
+        cv_acc = cross_val_score(model, X_train, y_train, cv=cv, scoring='accuracy', n_jobs=-1)
         
         # Train and test
         model.fit(X_train, y_train)
@@ -248,6 +248,15 @@ def main():
     
     print("🧹 Conservative text preprocessing...")
     df = preprocess_dataframe(df)
+    # Debug: show class distribution after preprocessing (to detect imbalance causing single-class predictions)
+    class_counts = df['class'].value_counts().to_dict()
+    print(f"🔎 Class distribution AFTER preprocessing: {class_counts}")
+    if len(class_counts) < 2:
+        print("⚠️ WARNING: Only one class remains after preprocessing. Predictions will all be the same. Adjust cleaning or data sampling.")
+        print("   Suggested quick fixes:\n"
+              "   - Reduce aggressiveness of stopword removal\n"
+              "   - Skip removing very short texts threshold or lower length cutoff\n"
+              "   - Ensure both Fake and Real CSVs loaded correctly")
     
     print("🔢 Creating balanced features...")
     X, y, vectorizer = create_balanced_features(df)

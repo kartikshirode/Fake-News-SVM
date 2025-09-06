@@ -19,6 +19,8 @@ import os
 import time
 import joblib
 import warnings
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.svm import LinearSVC
 
 # Try to import nltk resources, with graceful fallback
 try:
@@ -282,13 +284,10 @@ def train_optimized_model(X, y):
     print(f"Testing data: {X_test.shape[0]} samples")
     
     # Define models with optimized parameters
-    svm = SVC(
-        kernel='linear',
-        C=1.0,
-        class_weight='balanced',
-        random_state=42,
-        probability=True
-    )
+    svm = CalibratedClassifierCV(
+    base_estimator=LinearSVC(C=1.0, class_weight='balanced', random_state=42, max_iter=5000),
+    cv=5
+)
     
     rf = RandomForestClassifier(
         n_estimators=100,
@@ -296,7 +295,8 @@ def train_optimized_model(X, y):
         min_samples_split=2,
         min_samples_leaf=1,
         class_weight='balanced',
-        random_state=42
+        random_state=42,
+        n_jobs=-1
     )
     
     lr = LogisticRegression(
@@ -304,7 +304,8 @@ def train_optimized_model(X, y):
         solver='liblinear',
         class_weight='balanced',
         random_state=42,
-        max_iter=1000
+        max_iter=1000,
+        n_jobs=-1
     )
     
     # Create a voting ensemble

@@ -1,393 +1,132 @@
-"""
-Improved Fake News Detection Training Script
-Focuses on accuracy with minimal dependencies
-"""
 import pandas as pd
-import numpy as np
 import re
-import os
-import time
+import string
 import joblib
-from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
-import warnings
-warnings.filterwarnings('ignore')
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 
-def find_data_files():
-    """Find the data files in various possible locations"""
-    possible_fake_paths = [
-        "D:\\Kartik\\Learning\\ML\\Data\\Fake.csv",
-        "..\\Data\\Fake.csv",
-        "..\\..\\Data\\Fake.csv",
-        "Data\\Fake.csv",
-        "Fake.csv"
-    ]
-    
-    possible_true_paths = [
-        "D:\\Kartik\\Learning\\ML\\Data\\True.csv",
-        "..\\Data\\True.csv",
-        "..\\..\\Data\\True.csv",
-        "Data\\True.csv",
-        "True.csv"
-    ]
-    
-    fake_path = None
-    true_path = None
-    
-    for path in possible_fake_paths:
-        if os.path.exists(path):
-            fake_path = path
-            break
-    
-    for path in possible_true_paths:
-        if os.path.exists(path):
-            true_path = path
-            break
-    
-    if fake_path and true_path:
-        print(f"Found data files:\n- Fake news: {fake_path}\n- Real news: {true_path}")
-        return fake_path, true_path
-    else:
-        raise FileNotFoundError("Could not find Fake.csv and True.csv files in any expected location")
-
-def load_and_balance_data(max_samples=None):
-    """Load datasets with balanced sampling"""
-    # Find and load datasets
-    url_fake, url_true = find_data_files()
-    df_fake = pd.read_csv(url_fake)
-    df_true = pd.read_csv(url_true)
-    
-    print(f"Original data: Fake={len(df_fake)}, Real={len(df_true)}")
-    
-    # Balance the dataset by taking equal samples
-    min_samples = min(len(df_fake), len(df_true))
-    if max_samples:
-        sample_size = min(min_samples, max_samples)
-    else:
-        sample_size = min_samples  # Use all available data if no limit specified
-    
-    df_fake_sampled = df_fake.sample(n=sample_size, random_state=42)
-    df_true_sampled = df_true.sample(n=sample_size, random_state=42)
-    
-    print(f"Balanced data: Fake={len(df_fake_sampled)}, Real={len(df_true_sampled)}")
-    
-    # Add class labels
-    df_fake_sampled["class"] = 0  # Fake news
-    df_true_sampled["class"] = 1  # Real news
-    
-    # Combine datasets
-    df = pd.concat([df_fake_sampled, df_true_sampled], axis=0)
-    
-    # Shuffle the data
-    df = df.sample(frac=1, random_state=42).reset_index(drop=True)
-    
-    return df
-
+# -----------------------
+# 1. Load and preprocess
+# -----------------------
 def clean_text(text):
-    """Text cleaning function with good performance"""
-    if pd.isna(text):
-        return ""
-    
-    # Convert to string and lowercase
-    text = str(text).lower()
-    
-    # Replace URLs with placeholder
-    text = re.sub(r'http\S+|www\S+|https\S+', ' [URL] ', text, flags=re.MULTILINE)
-    
-    # Replace email with placeholder
-    text = re.sub(r'\S+@\S+', ' [EMAIL] ', text)
-    
-    # Replace numbers with placeholder
-    text = re.sub(r'\b\d{4,}\b', ' [NUMBER] ', text)
-    
-    # Remove non-alphanumeric characters except basic punctuation
-    text = re.sub(r'[^a-zA-Z0-9\s\.\!\?\,\;\:]', ' ', text)
-    
-    # Remove extra whitespace
-    text = ' '.join(text.split())
-    
+    """Basic text cleaning: lowercase, remove punctuation/numbers/extra spaces."""
+    text = text.lower()
+    text = re.sub(r"\d+", " ", text)  # remove numbers
+    text = text.translate(str.maketrans("", "", string.punctuation))  # remove punctuation
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
-def preprocess_dataframe(df):
-    """Process dataframe with balanced approach"""
-    start_time = time.time()
-    print("Preprocessing text data...")
-    
-    # Combine title and text
-    if 'title' in df.columns and 'text' in df.columns:
-        df["total_text"] = df["title"].fillna("").astype(str) + " " + df["text"].fillna("").astype(str)
-    elif 'text' in df.columns:
-        df["total_text"] = df["text"].fillna("").astype(str)
-    else:
-        # Try to find text columns with different names
-        text_columns = [col for col in df.columns if col.lower() in ['text', 'content', 'article']]
-        title_columns = [col for col in df.columns if col.lower() in ['title', 'headline']]
-        
-        if text_columns and title_columns:
-            df["total_text"] = df[title_columns[0]].fillna("").astype(str) + " " + df[text_columns[0]].fillna("").astype(str)
-        elif text_columns:
-            df["total_text"] = df[text_columns[0]].fillna("").astype(str)
-        else:
-            raise ValueError("Could not find text columns in the dataset")
-    
-    # Clean text
-    print("Applying text cleaning...")
-    df["total_text"] = df["total_text"].apply(clean_text)
-    
-    # Remove very short or empty texts
-    df = df[df["total_text"].str.len() > 30]
-    
-    # Remove exact duplicates
-    df = df.drop_duplicates(subset=['total_text'])
-    
-    # Print text statistics
-    text_lengths = df["total_text"].str.len()
-    print(f"Text length statistics:")
-    print(f"- Average: {text_lengths.mean():.1f} characters")
-    print(f"- Minimum: {text_lengths.min()} characters")
-    print(f"- Maximum: {text_lengths.max()} characters")
-    
-    print(f"After preprocessing: {len(df)} articles remaining")
-    print(f"Preprocessing completed in {time.time() - start_time:.2f} seconds")
-    
-    return df[["total_text", "class"]]
+def load_data():
+    # Load Kaggle fake-news dataset (Fake.csv and True.csv)
+    df_fake = pd.read_csv("Fake.csv")
+    df_true = pd.read_csv("True.csv")
 
-def create_features(df, max_features=3000):
-    """Create features for classification"""
-    start_time = time.time()
-    print(f"Creating TF-IDF features with {max_features} features...")
-    
+    df_fake["class"] = 0  # Fake = 0
+    df_true["class"] = 1  # Real = 1
+
+    df = pd.concat([df_fake, df_true], axis=0).sample(frac=1, random_state=42).reset_index(drop=True)
+    df["total_text"] = (df["title"].fillna("") + " " + df["text"].fillna("")).apply(clean_text)
+
+    return df
+
+# -----------------------
+# 2. Features (TF-IDF)
+# -----------------------
+def create_features(df):
     vectorizer = TfidfVectorizer(
-        max_features=max_features,
-        min_df=3,
-        max_df=0.9,
-        ngram_range=(1, 2),
-        strip_accents='unicode',
-        lowercase=True,
+        max_features=10000,
+        min_df=5,
+        max_df=0.8,
+        ngram_range=(1, 3),
         sublinear_tf=True,
-        use_idf=True,
-        norm='l2'
+        strip_accents="unicode",
+        lowercase=True
     )
-    
     X = vectorizer.fit_transform(df["total_text"])
     y = df["class"]
-    
-    print(f"Feature matrix shape: ({X.shape[0]}, {X.shape[1]})")
-    print(f"Class distribution: Real={sum(y)}, Fake={len(y) - sum(y)}")
-    print(f"Feature extraction completed in {time.time() - start_time:.2f} seconds")
-    
     return X, y, vectorizer
 
-def train_model(X, y):
-    """Train an SVM model with good accuracy"""
-    start_time = time.time()
-    print("Training SVM model...")
-    
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+# -----------------------
+# 3. Train Logistic Regression
+# -----------------------
+def train_model(X_train, y_train):
+    model = LogisticRegression(
+        C=2.0,
+        solver="liblinear",
+        class_weight="balanced",
+        max_iter=2000
     )
-    
-    print(f"Training data: {X_train.shape[0]} samples")
-    print(f"Testing data: {X_test.shape[0]} samples")
-    
-    # Train SVM with optimized parameters
-    model = SVC(
-        kernel='linear',
-        C=1.0,
-        class_weight='balanced',
-        random_state=42,
-        probability=True
-    )
-    
     model.fit(X_train, y_train)
-    
-    # Predict and evaluate
+    return model
+
+# -----------------------
+# 4. Evaluate
+# -----------------------
+def evaluate(model, X_test, y_test):
     y_pred = model.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred, average='macro')
-    
-    print(f"Training completed in {time.time() - start_time:.2f} seconds")
-    print(f"Model accuracy: {accuracy:.4f}")
-    print(f"Model F1-score: {f1:.4f}")
-    
-    return model, X_test, y_test, y_pred
+    print("Accuracy:", accuracy_score(y_test, y_pred))
+    print("\nClassification Report:\n", classification_report(y_test, y_pred, digits=3))
+    print("\nConfusion Matrix:\n", confusion_matrix(y_test, y_pred))
 
-def evaluate_model(y_test, y_pred):
-    """Evaluate model performance"""
-    print("\nDetailed Model Evaluation:")
-    print("-" * 50)
-    
-    accuracy = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred, average='macro')
-    
-    print(f"Overall Performance:")
-    print(f"- Accuracy: {accuracy:.4f}")
-    print(f"- F1-Score: {f1:.4f}")
-    
-    print("\nClassification Report:")
-    print(classification_report(y_test, y_pred, target_names=['Fake News', 'Real News']))
-    
-    # Confusion matrix analysis
-    cm = confusion_matrix(y_test, y_pred)
-    tn, fp, fn, tp = cm.ravel()
-    
-    print("\nConfusion Matrix:")
-    print(f"- True Negatives (correctly identified FAKE): {tn}")
-    print(f"- False Positives (FAKE misclassified as REAL): {fp}")
-    print(f"- False Negatives (REAL misclassified as FAKE): {fn}")
-    print(f"- True Positives (correctly identified REAL): {tp}")
-    
-    # Calculate balance metrics
-    fake_precision = tn / (tn + fn) if (tn + fn) > 0 else 0
-    real_precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    fake_recall = tn / (tn + fp) if (tn + fp) > 0 else 0
-    real_recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    
-    print("\nBalance Analysis:")
-    print(f"- Fake News - Precision: {fake_precision:.4f}, Recall: {fake_recall:.4f}")
-    print(f"- Real News - Precision: {real_precision:.4f}, Recall: {real_recall:.4f}")
-    
-    # Check for bias
-    bias_towards_fake = fn / (fn + tp) if (fn + tp) > 0 else 0
-    bias_towards_real = fp / (fp + tn) if (fp + tn) > 0 else 0
-    
-    print("\nBias Analysis:")
-    print(f"- Tendency to predict FAKE: {bias_towards_fake:.4f}")
-    print(f"- Tendency to predict REAL: {bias_towards_real:.4f}")
-    
-    if bias_towards_fake > 0.1 or bias_towards_real > 0.1:
-        if bias_towards_fake > bias_towards_real:
-            print("- Model shows some bias towards predicting FAKE news")
-        else:
-            print("- Model shows some bias towards predicting REAL news")
-    else:
-        print("- Model is well balanced!")
-    
-    return accuracy, f1
-
+# -----------------------
+# 5. Real-world test
+# -----------------------
 def test_examples(model, vectorizer):
-    """Test the model on real-world examples"""
-    print("\nTesting on real-world examples:")
-    print("-" * 50)
-    
     examples = [
-        {
-            "text": "Scientists discover new species of frog in Amazon rainforest with unique coloration.",
-            "expected": "Real"
-        },
-        {
-            "text": "Breaking news: Scientists discover that drinking coffee mixed with lemon juice can cure all types of cancer overnight.",
-            "expected": "Fake"
-        },
-        {
-            "text": "The Federal Reserve announced a quarter-point interest rate increase today, bringing the target range to 5.25-5.5%.",
-            "expected": "Real"
-        },
-        {
-            "text": "Secret government documents reveal that aliens have been living among us for decades and have infiltrated the highest levels of government.",
-            "expected": "Fake"
-        },
-        {
-            "text": "The annual budget meeting is scheduled for next Tuesday at 2:00 PM in Conference Room A. All department heads are required to attend.",
-            "expected": "Real"
-        }
+        ("Scientists discover new species of frog in Amazon rainforest with unique coloration.", 1),
+        ("Breaking news: Scientists discover that drinking coffee mixed with lemon juice can cure all types of cancer overnight.", 0),
+        ("The Federal Reserve announced a quarter-point interest rate increase today, bringing the target range to 5.25-5.5%.", 1),
+        ("Secret government documents reveal that aliens have been living among us for decades and have infiltrated the highest levels of government.", 0),
+        ("The annual budget meeting is scheduled for next Tuesday at 2:00 PM in Conference Room A. All department heads are required to attend.", 1)
     ]
-    
-    correct_count = 0
-    
-    for i, example in enumerate(examples, 1):
-        # Preprocess text
-        processed_text = clean_text(example["text"])
-        
-        # Vectorize
-        text_vector = vectorizer.transform([processed_text])
-        
-        # Predict
-        prediction = model.predict(text_vector)[0]
-        
-        # Calculate confidence
-        confidence = 0.5
-        if hasattr(model, "predict_proba"):
-            probs = model.predict_proba(text_vector)[0]
-            confidence = probs[1] if prediction == 1 else probs[0]
-        
-        # Format result
-        result = "REAL" if prediction == 1 else "FAKE"
-        is_correct = (result == "REAL" and example["expected"] == "Real") or \
-                     (result == "FAKE" and example["expected"] == "Fake")
-        
-        if is_correct:
-            correct_count += 1
-        
-        # Print result
+
+    correct = 0
+    for i, (text, expected) in enumerate(examples, 1):
+        vec = vectorizer.transform([clean_text(text)])
+        pred = model.predict(vec)[0]
+        prob = model.predict_proba(vec)[0]
+        confidence = max(prob)
+        is_correct = (pred == expected)
+        correct += is_correct
         print(f"Example {i}:")
-        print(f"Text: {example['text']}")
-        print(f"Expected: {example['expected']}")
-        print(f"Predicted: {result} with {confidence:.2f} confidence")
-        print(f"Correct: {'Yes' if is_correct else 'No'}")
-        print("-" * 50)
-    
-    # Print summary
-    accuracy = correct_count / len(examples)
-    print(f"Real-world test accuracy: {accuracy:.2f} ({correct_count}/{len(examples)} correct)")
-    
-    return accuracy
+        print(f"Text: {text}")
+        print(f"Expected: {'Real' if expected==1 else 'Fake'}")
+        print(f"Predicted: {'Real' if pred==1 else 'Fake'} with {confidence:.2f} confidence")
+        print(f"Correct: {is_correct}")
+        print("-"*50)
 
-def save_model(model, vectorizer):
-    """Save the model and vectorizer"""
-    print("\nSaving model and vectorizer...")
-    
-    try:
-        joblib.dump(model, "svm_model.pkl")
-        joblib.dump(vectorizer, "tfidf_vectorizer.pkl")
-        print("Model and vectorizer saved successfully!")
-    except Exception as e:
-        print(f"Error saving model: {str(e)}")
+    print(f"Real-world test accuracy: {correct}/{len(examples)} = {correct/len(examples):.2f}")
 
+# -----------------------
+# 6. Main
+# -----------------------
 def main():
-    """Main function to train and evaluate the fake news detection model"""
-    total_start_time = time.time()
-    
-    print("=" * 60)
-    print("IMPROVED FAKE NEWS DETECTION - TRAINING")
-    print("=" * 60)
-    
-    # Step 1: Load and balance data (use fewer samples for quicker training)
-    df = load_and_balance_data(max_samples=10000)
-    
-    # Step 2: Preprocess text
-    df = preprocess_dataframe(df)
-    
-    # Step 3: Create features
+    print("📥 Loading data...")
+    df = load_data()
+
+    print("🔎 Creating features...")
     X, y, vectorizer = create_features(df)
-    
-    # Step 4: Train model
-    model, X_test, y_test, y_pred = train_model(X, y)
-    
-    # Step 5: Evaluate model
-    accuracy, f1 = evaluate_model(y_test, y_pred)
-    
-    # Step 6: Test on real examples
-    real_world_accuracy = test_examples(model, vectorizer)
-    
-    # Step 7: Save model
-    save_model(model, vectorizer)
-    
-    # Print summary
-    total_time = time.time() - total_start_time
-    print("\n" + "=" * 60)
-    print("TRAINING COMPLETE")
-    print("=" * 60)
-    print(f"Total training time: {total_time:.2f} seconds")
-    print(f"Model accuracy: {accuracy:.4f}")
-    print(f"F1 score: {f1:.4f}")
-    print(f"Real-world accuracy: {real_world_accuracy:.2f}")
-    print("=" * 60)
-    print("To test the model, run: python app.py")
-    print("=" * 60)
+
+    print("✂️ Splitting train/test...")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+
+    print("⚡ Training Logistic Regression...")
+    model = train_model(X_train, y_train)
+
+    print("📊 Evaluating...")
+    evaluate(model, X_test, y_test)
+
+    print("🧪 Testing with real-world examples...")
+    test_examples(model, vectorizer)
+
+    print("💾 Saving model and vectorizer...")
+    joblib.dump(model, "logreg_model.pkl")
+    joblib.dump(vectorizer, "tfidf_vectorizer.pkl")
+    print("✅ Model and vectorizer saved!")
 
 if __name__ == "__main__":
     main()
