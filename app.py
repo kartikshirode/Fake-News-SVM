@@ -9,8 +9,8 @@ def load_models():
     """Load the saved model and vectorizer"""
     try:
         # Try to load balanced model first
-        model = joblib.load("svm_model_balanced.pkl")
-        vectorizer = joblib.load("tfidf_vectorizer_balanced.pkl")
+        model = joblib.load(r"ML\SVM\Fake-News-SVM\svm_model_balanced.pkl")
+        vectorizer = joblib.load(r"ML\SVM\Fake-News-SVM\tfidf_vectorizer_balanced.pkl")
         return model, vectorizer
     except FileNotFoundError:
         try:
